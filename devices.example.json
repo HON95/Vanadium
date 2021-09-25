@@ -1,0 +1,13 @@
+[
+    {
+        "address": "distro1",
+        "connection_type": "juniper_ex_ssh",
+        "credential_id": "distro1"
+    },
+    {
+        "address": "access1",
+        "port": 2222,
+        "connection_type": "juniper_ex_ssh",
+        "credential_id": "distro1"
+    }
+]

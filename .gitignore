@@ -1,0 +1,6 @@
+/vanadium
+/config.json
+/credentials.json
+/devices.json
+/id_*
+/.local/

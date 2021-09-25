@@ -1,0 +1,34 @@
+services:
+  vanadium:
+    image: hon95/vanadium:latest
+    build:
+      context: .
+      args:
+        - APP_VERSION=0.0.0-SNAPSHOT
+    command:
+      - '--debug'
+    user: 1000:1000
+    environment:
+      - TZ=Europe/Oslo
+    volumes:
+      # Use same DNS servers domain as host, if using systemd-resolved
+      - '/run/systemd/resolve/resolv.conf:/etc/resolv.conf:ro'
+      # Make sure to create these files so Docker doesn't make them into directories
+      - './config.json:/app/config.json:ro'
+      - './credentials.json:/app/credentials.json:ro'
+      - './devices.json:/app/devices.json:ro'
+      - './id_rsa:/app/id_rsa:ro'
+      - './id_rsa.pub:/app/id_rsa.pub:ro'
+    ports:
+      - 127.0.0.1:8080:8080/tcp
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.0
+    environment:
+      - TZ=Europe/Oslo
+    volumes:
+      - '.local/influxdb/:/var/lib/influxdb2:rw'
+    ports:
+      - 127.0.0.1:8086:8086/tcp
+    restart: unless-stopped
