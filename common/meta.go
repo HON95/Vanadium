@@ -1,4 +1,4 @@
-package core
+package common
 
 // AppName - App name.
 const AppName = "Vanadium"
@@ -8,4 +8,4 @@ const AppAuthor = "HON95"
 
 // AppVersion - App version.
 // Updated by build tools.
-var AppVersion = "0.0.0-SNAPSHOT"
+const AppVersion = "0.0.0-SNAPSHOT"

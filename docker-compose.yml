@@ -27,6 +27,11 @@ services:
     image: influxdb:2.0
     environment:
       - TZ=Europe/Oslo
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=vanadium
+      - DOCKER_INFLUXDB_INIT_PASSWORD=vanadium
+      - DOCKER_INFLUXDB_INIT_ORG=vanadium
+      - DOCKER_INFLUXDB_INIT_BUCKET=vanadium
     volumes:
       - '.local/influxdb/:/var/lib/influxdb2:rw'
     ports:

@@ -27,7 +27,7 @@ type outputReaderResult struct {
 func checkDeviceFailure(device common.Device, message string, err error) bool {
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
-			"device_address": device.Address,
+			"device": device.Address,
 		}).Tracef("Device error: %v", message)
 		return false
 	}
@@ -36,17 +36,17 @@ func checkDeviceFailure(device common.Device, message string, err error) bool {
 
 func showDeviceFailure(device common.Device, message string) {
 	log.WithFields(log.Fields{
-		"device_address": device.Address,
+		"device": device.Address,
 	}).Tracef("Device error: %v", message)
 }
 
 func openSSHClient(device common.Device) (*common.Credential, *ssh.Client, bool) {
 	// Get credential
-	credential, foundCredential := common.LoadedCredentials[device.CredentialID]
+	credential, foundCredential := common.GlobalCredentials[device.CredentialID]
 	if !foundCredential {
 		log.WithFields(log.Fields{
-			"device_address": device.Address,
-		}).Trace("Failed to find credential")
+			"device": device.Address,
+		}).Warnf("Failed to find credential: %v", device.CredentialID)
 		return nil, nil, false
 	}
 
@@ -59,14 +59,16 @@ func openSSHClient(device common.Device) (*common.Credential, *ssh.Client, bool)
 		privkey, err := ioutil.ReadFile(credential.PrivateKeyPath)
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{
-				"private_key_path": credential.PrivateKeyPath,
-			}).Trace("Failed to read SSH private key")
+				"device": device.Address,
+			}).Warnf("Failed to read SSH private key: %v", credential.PrivateKeyPath)
+			return nil, nil, false
 		}
 		signer, err := ssh.ParsePrivateKey(privkey)
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{
-				"private_key_path": credential.PrivateKeyPath,
-			}).Trace("Failed to parse SSH private key")
+				"device": device.Address,
+			}).Warnf("Failed to parse SSH private key: %v", credential.PrivateKeyPath)
+			return nil, nil, false
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
@@ -87,14 +89,16 @@ func openSSHClient(device common.Device) (*common.Credential, *ssh.Client, bool)
 	sshClient, err := ssh.Dial("tcp", fullAddress, &sshConfig)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
-			"device_address": device.Address,
-		}).Trace("Failed to connect to device")
+			"device": device.Address,
+		}).Tracef("Failed to connect to device: %v", fullAddress)
 		return nil, nil, false
 	}
 
 	return &credential, sshClient, true
 }
 
+// Open SSH connection and run a single command.
+// Appropriate if new connections are cheap for the device and shells are troublesome (output problems).
 func runSSHCommand(device common.Device, command string) ([]string, bool) {
 	// Setup
 	_, sshClient, sshClientOpenSuccess := openSSHClient(device)
@@ -127,7 +131,7 @@ func runSSHCommand(device common.Device, command string) ([]string, bool) {
 	return lines, ok
 }
 
-// Reads the stream in the background and returns a channel for its lines
+// Reads the stream in the background and returns a channel for its lines.
 func followSSHStreamLines(device common.Device, streamName string, reader io.Reader) <-chan outputReaderResult {
 	outChannel := make(chan outputReaderResult, 256)
 
@@ -167,7 +171,7 @@ func followSSHStreamLines(device common.Device, streamName string, reader io.Rea
 	return outChannel
 }
 
-// Reads the stream in the background and just prints them to log if anything appears
+// Reads the stream in the background and just prints them to log if anything appears.
 func drainSSHStreamLines(device common.Device, streamName string, reader io.Reader, silent bool) {
 	go func() {
 		bufferSize := 4096
@@ -194,7 +198,7 @@ func drainSSHStreamLines(device common.Device, streamName string, reader io.Read
 					buffer = make([]byte, bufferSize)
 					copy(buffer, oldBufferRemains)
 					log.WithFields(log.Fields{
-						"device_address": device.Address,
+						"device": device.Address,
 					}).Tracef("Received line on STDERR: %v", line)
 					break
 				}
@@ -203,7 +207,7 @@ func drainSSHStreamLines(device common.Device, streamName string, reader io.Read
 	}()
 }
 
-// Blocks until reader is closed, then returns all lines from it
+// Blocks until reader is closed, then returns all lines from it.
 func collectSSHStreamLines(device common.Device, streamName string, reader io.Reader) ([]string, bool) {
 	mainBuffer := make([]byte, 4096)
 	mainNumBytes := 0

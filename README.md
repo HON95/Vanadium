@@ -54,14 +54,18 @@ services:
 
 - Build: `go build -o vanadium cmd/vanadium/*.go`
 - Build and run (Docker): `docker-compose up --build`
+- Vet: `go vet ./...`
 - Lint: `golint ./...`
 
 ## TODO
 
 - Clean shutdown of web server, scraper and DB?
 - Distribute scrapes during scrape interval.
+- Scrape timeout.
 - Group L2/MAC by VLAN ID, group L3/IP by network.
-- VRFs. Just show data for all VRFs now and ignore VRF names. If a VRF is not currently included in the data, it's considered a bug.
+- VRFs/VPNs. Just show data for all VRFs now and ignore VRF names. If a VRF is not currently included in the data, it's considered a bug.
+- MAC age, ignore old.
+- Linux defaults to 30s from reachable to stale in neighbor table. Scraping interval should thus be <30s to capture everything.
 
 ## License
 

@@ -30,70 +30,49 @@ type Device struct {
 	CredentialID   string `json:"credential_id"`
 }
 
-// LoadedCredentials - List of loaded credentials, identified by some ID.
-var LoadedCredentials map[string]Credential
-
-// LoadedDevices - List of loaded devices, addresses must be unique.
-var LoadedDevices []Device
-
 // LoadCredentials - Load credentials from file from config.
 func LoadCredentials() bool {
-	if Config.CredentialsPath == "" {
+	if GlobalConfig.CredentialsPath == "" {
 		log.Error("Credentials config path missing")
 		return false
 	}
 
-	log.WithFields(log.Fields{
-		"credentials_path": Config.CredentialsPath,
-	}).Trace("Loading credentials")
-	if !util.ParseJSONFile(&LoadedCredentials, Config.CredentialsPath) {
+	if !util.ParseJSONFile(&GlobalCredentials, GlobalConfig.CredentialsPath) {
 		return false
 	}
 
-	for credentialID, credential := range LoadedCredentials {
+	for credentialID, credential := range GlobalCredentials {
 		if credentialID == "" || credential.Username == "" {
-			log.WithFields(log.Fields{
-				"credential_id":       credentialID,
-				"credential_username": credential.Username,
-			}).Error("Invalid credential, missing fields")
+			log.Errorf("Invalid credential, missing fields: %v", credentialID)
 			return false
 		}
 	}
 
-	log.WithFields(log.Fields{
-		"credential_count": len(LoadedCredentials),
-	}).Info("Loaded credentials")
+	log.Infof("Loaded %v credentials: %v", len(GlobalCredentials), GlobalConfig.CredentialsPath)
 
 	return true
 }
 
 // LoadDevices - Load devices from file from config.
 func LoadDevices() bool {
-	if Config.DevicesPath == "" {
+	if GlobalConfig.DevicesPath == "" {
 		log.Error("Device config path missing")
 		return false
 	}
 
-	log.WithFields(log.Fields{
-		"devices_path": Config.DevicesPath,
-	}).Trace("Loading devices")
-	if !util.ParseJSONFile(&LoadedDevices, Config.DevicesPath) {
+	if !util.ParseJSONFile(&GlobalDevices, GlobalConfig.DevicesPath) {
 		return false
 	}
 
 	deviceAddresses := make(map[string]bool)
-	for _, device := range LoadedDevices {
+	for _, device := range GlobalDevices {
 		if device.Address == "" || device.CredentialID == "" {
-			log.WithFields(log.Fields{
-				"device_address": device.Address,
-			}).Error("Invalid device, missing fields")
+			log.Errorf("Invalid device, missing fields: %v", device.Address)
 			return false
 		}
 		// Check for duplicate address
 		if _, found := deviceAddresses[device.Address]; found {
-			log.WithFields(log.Fields{
-				"device_address": device.Address,
-			}).Error("Duplicate device address found")
+			log.Errorf("Duplicate device address found: %v", device.Address)
 			return false
 		}
 		deviceAddresses[device.Address] = true
@@ -105,25 +84,17 @@ func LoadDevices() bool {
 		case ConnectionTypeFSOSSSH:
 		case ConnectionTypeTPLinkJetstreamSSH:
 		default:
-			log.WithFields(log.Fields{
-				"device_address":  device.Address,
-				"connection_type": device.ConnectionType,
-			}).Error("Invalid device, connection type not found")
+			log.Errorf("Invalid device, connection type not found: %v", device.Address)
 			return false
 		}
 		// Check if credential ID exists
-		if _, found := LoadedCredentials[device.CredentialID]; !found {
-			log.WithFields(log.Fields{
-				"device_address": device.Address,
-				"credential_id":  device.CredentialID,
-			}).Error("Invalid device, credential ID not found")
+		if _, found := GlobalCredentials[device.CredentialID]; !found {
+			log.Error("Invalid device, credential ID not found: %v", device.Address)
 			return false
 		}
 	}
 
-	log.WithFields(log.Fields{
-		"device_count": len(LoadedDevices),
-	}).Info("Loaded devices")
+	log.Infof("Loaded %v devices: %v", len(GlobalDevices), GlobalConfig.DevicesPath)
 
 	return true
 }

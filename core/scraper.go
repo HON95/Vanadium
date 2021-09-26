@@ -1,30 +1,53 @@
 package core
 
 import (
+	"sync"
 	"time"
 
 	"dev.hon.one/vanadium/common"
 	"dev.hon.one/vanadium/scrapers"
+	"dev.hon.one/vanadium/util"
 	log "github.com/sirupsen/logrus"
 )
 
-// RunScraper - Run device scraper.
-func RunScraper() {
-	scrapeAll()
-	for range time.Tick(time.Duration(common.Config.ScrapeIntervalSeconds) * time.Second) {
+// StartScraper - Start device scraper in background.
+func StartScraper(waitGroup *sync.WaitGroup, shutdown *util.ShutdownChannelDistributor) {
+	// Setup shutdown signal and waitgroup
+	shutdownChannel := make(chan bool, 1)
+	shutdown.AddListener(shutdownChannel)
+	waitGroup.Add(1)
+
+	go func() {
+		defer waitGroup.Done()
+		defer log.Info("Scraper stopped")
+
+		// Scrape immediately
 		scrapeAll()
-	}
+
+		for {
+			select {
+			case <-time.Tick(time.Duration(common.GlobalConfig.ScrapeIntervalSeconds) * time.Second):
+				scrapeAll()
+			case <-shutdownChannel:
+				return
+			}
+
+		}
+	}()
+
+	log.Info("Scraper started")
 }
 
 func scrapeAll() {
-	for _, device := range common.LoadedDevices {
+	log.Trace("Scraping all devices")
+	for _, device := range common.GlobalDevices {
 		go scrapeSingle(device)
 	}
 }
 
 func scrapeSingle(device common.Device) {
 	log.WithFields(log.Fields{
-		"device_address": device.Address,
+		"device": device.Address,
 	}).Trace("Scraping device")
 	startTime := time.Now()
 

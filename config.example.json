@@ -1,5 +1,5 @@
 {
-    "http_endpoint": "127.0.0.1:8080",
+    "http_endpoint": ":8080",
     "credentials_path": "credentials.json",
     "devices_path": "devices.json",
     "scrape_interval": 60

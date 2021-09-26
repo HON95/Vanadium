@@ -1,0 +1,12 @@
+[
+    {
+        "address": "router",
+        "connection_type": "vyos_ssh",
+        "credential_id": "test"
+    },
+    {
+        "address": "velstadt",
+        "connection_type": "junos_ex_ssh",
+        "credential_id": "test"
+    }
+]
