@@ -11,8 +11,6 @@ services:
     environment:
       - TZ=Europe/Oslo
     volumes:
-      # Use same DNS servers domain as host, if using systemd-resolved
-      - '/run/systemd/resolve/resolv.conf:/etc/resolv.conf:ro'
       # Make sure to create these files so Docker doesn't make them into directories
       - './config.json:/app/config.json:ro'
       - './credentials.json:/app/credentials.json:ro'
@@ -32,6 +30,7 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=vanadium
       - DOCKER_INFLUXDB_INIT_ORG=vanadium
       - DOCKER_INFLUXDB_INIT_BUCKET=vanadium
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=0
     volumes:
       - '.local/influxdb/:/var/lib/influxdb2:rw'
     ports:

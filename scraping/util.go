@@ -1,4 +1,4 @@
-package scrapers
+package scraping
 
 import (
 	"fmt"
@@ -24,7 +24,7 @@ type outputReaderResult struct {
 	Status outputReaderStatus
 }
 
-func checkDeviceFailure(device common.Device, message string, err error) bool {
+func checkDeviceWeakFailure(device common.Device, message string, err error) bool {
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
 			"device": device.Address,
@@ -34,7 +34,7 @@ func checkDeviceFailure(device common.Device, message string, err error) bool {
 	return true
 }
 
-func showDeviceFailure(device common.Device, message string) {
+func showDeviceWeakFailure(device common.Device, message string) {
 	log.WithFields(log.Fields{
 		"device": device.Address,
 	}).Tracef("Device error: %v", message)
@@ -107,21 +107,21 @@ func runSSHCommand(device common.Device, command string) ([]string, bool) {
 	}
 	defer sshClient.Close()
 	session, err := sshClient.NewSession()
-	if !checkDeviceFailure(device, "Failed to start session", err) {
+	if !checkDeviceWeakFailure(device, "Failed to start session", err) {
 		return nil, false
 	}
 	stdoutReader, err := session.StdoutPipe()
-	if !checkDeviceFailure(device, "Failed to get STDOUT pipe", err) {
+	if !checkDeviceWeakFailure(device, "Failed to get STDOUT pipe", err) {
 		return nil, false
 	}
 	stderrReader, err := session.StderrPipe()
-	if !checkDeviceFailure(device, "Failed to get STDERR pipe", err) {
+	if !checkDeviceWeakFailure(device, "Failed to get STDERR pipe", err) {
 		return nil, false
 	}
 
 	// Run command
 	err = session.Run(command)
-	if !checkDeviceFailure(device, fmt.Sprintf("Failed to run SSH command: %v", command), err) {
+	if !checkDeviceWeakFailure(device, fmt.Sprintf("Failed to run SSH command: %v", command), err) {
 		return nil, false
 	}
 
@@ -147,7 +147,7 @@ func followSSHStreamLines(device common.Device, streamName string, reader io.Rea
 				outChannel <- outputReaderResult{Status: outputReaderDone}
 				break
 			} else if err != nil {
-				checkDeviceFailure(device, fmt.Sprintf("Failed to read from %v stream", streamName), err)
+				checkDeviceWeakFailure(device, fmt.Sprintf("Failed to read from %v stream", streamName), err)
 				outChannel <- outputReaderResult{Status: outputReaderError}
 			}
 			bufferUsage += tmpNumBytes
@@ -184,7 +184,7 @@ func drainSSHStreamLines(device common.Device, streamName string, reader io.Read
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				checkDeviceFailure(device, fmt.Sprintf("Failed to read from %v stream", streamName), err)
+				checkDeviceWeakFailure(device, fmt.Sprintf("Failed to read from %v stream", streamName), err)
 			}
 			bufferUsage += tmpNumBytes
 
@@ -217,7 +217,7 @@ func collectSSHStreamLines(device common.Device, streamName string, reader io.Re
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			checkDeviceFailure(device, fmt.Sprintf("Failed to read from %v stream", streamName), err)
+			checkDeviceWeakFailure(device, fmt.Sprintf("Failed to read from %v stream", streamName), err)
 			return nil, false
 		}
 		// Maybe expand main buffer (assume main buffer is at least as large as tmp buffer)

@@ -1,19 +1,21 @@
-package scrapers
+package scraping
 
 import (
+	"fmt"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"dev.hon.one/vanadium/common"
-	log "github.com/sirupsen/logrus"
+	"dev.hon.one/vanadium/db"
 )
 
 var junosOperPromptRegex = regexp.MustCompile(`[^@]+@[^>]+>`)
 var junosVersionBeginRegex = regexp.MustCompile(`show version`)
 var junosModelRegex = regexp.MustCompile(`Model: ([^ ]+)`)
-var junosVersionRegex = regexp.MustCompile(`Junos: ([^ ]+)`)
+var junosSoftwareVersionRegex = regexp.MustCompile(`Junos: ([^ ]+)`)
 var junosVLANTableBeginRegex = regexp.MustCompile(`show vlans brief`)
 var junosVLANTableEntryRegex = regexp.MustCompile(`^ *([^ ]+) +([0-9]+) `)
 var junosMACTableBeginRegex = regexp.MustCompile(`show ethernet-switching table`)
@@ -27,7 +29,7 @@ var junosNDPTableBeginRegex = regexp.MustCompile(`show ipv6 neighbors`)
 var junosNDPTableEntryRegex = regexp.MustCompile(`^([^ ]+) +([^ ]+) +([^ ]+) +([^ ]+) +([^ ]+) +([^ ]+) +([^ ]+) *$`)
 
 // JunosEXSSH - Scrape a Juniper EX switch running Junos using SSH.
-func JunosEXSSH(device common.Device) bool {
+func JunosEXSSH(device common.Device, startTime time.Time) bool {
 	_, sshClient, sshClientOpenSuccess := openSSHClient(device)
 	if !sshClientOpenSuccess {
 		return false
@@ -36,23 +38,23 @@ func JunosEXSSH(device common.Device) bool {
 
 	// Setup session
 	session, err := sshClient.NewSession()
-	if !checkDeviceFailure(device, "Failed to start session", err) {
+	if !checkDeviceWeakFailure(device, "Failed to start session", err) {
 		return false
 	}
 	stdinWriter, err := session.StdinPipe()
-	if !checkDeviceFailure(device, "Failed to get STDIN pipe", err) {
+	if !checkDeviceWeakFailure(device, "Failed to get STDIN pipe", err) {
 		return false
 	}
 	stdoutReader, err := session.StdoutPipe()
-	if !checkDeviceFailure(device, "Failed to get STDOUT pipe", err) {
+	if !checkDeviceWeakFailure(device, "Failed to get STDOUT pipe", err) {
 		return false
 	}
 	stderrReader, err := session.StderrPipe()
-	if !checkDeviceFailure(device, "Failed to get STDERR pipe", err) {
+	if !checkDeviceWeakFailure(device, "Failed to get STDERR pipe", err) {
 		return false
 	}
 	err = session.Shell()
-	if !checkDeviceFailure(device, "Failed to start shell", err) {
+	if !checkDeviceWeakFailure(device, "Failed to start shell", err) {
 		return false
 	}
 
@@ -65,7 +67,7 @@ func JunosEXSSH(device common.Device) bool {
 	stdinWriter.Write([]byte("show version\n\n"))
 	stdinWriter.Write([]byte("help\n\n")) // Push output
 	model := ""
-	version := ""
+	softwareVersion := ""
 	for {
 		currentOutput = <-lineChannel
 		if currentOutput.Status != outputReaderOK {
@@ -87,24 +89,29 @@ func JunosEXSSH(device common.Device) bool {
 			break
 		}
 		modelResult := junosModelRegex.FindStringSubmatch(currentOutput.Line)
-		versionResult := junosVersionRegex.FindStringSubmatch(currentOutput.Line)
+		softwareVersionResult := junosSoftwareVersionRegex.FindStringSubmatch(currentOutput.Line)
 		if modelResult != nil {
 			model = modelResult[1]
 		}
-		if versionResult != nil {
-			version = versionResult[1]
+		if softwareVersionResult != nil {
+			softwareVersion = softwareVersionResult[1]
 		}
 	}
-	log.WithFields(log.Fields{
-		"device":  device.Address,
-		"model":   model,
-		"version": version,
-	}).Trace("Found device info")
+	vendor := "Juniper"
+	sourceDeviceEntry := common.SourceDeviceEntry{
+		Time:     startTime,
+		Source:   device.Address,
+		Vendor:   vendor,
+		Model:    model,
+		Software: fmt.Sprintf("Junos %v", softwareVersion),
+		Other:    "",
+	}
+	db.StoreSourceDeviceEntry(sourceDeviceEntry)
 
 	// Get VLANs
 	stdinWriter.Write([]byte("show vlans brief\n\n"))
 	stdinWriter.Write([]byte("help\n\n")) // Push output
-	vlans := make(map[string]int)
+	vlans := make(map[string]uint)
 	// Default isn't automatically added since it isn't defined with a tag/VID
 	vlans["default"] = 0
 	for {
@@ -134,20 +141,16 @@ func JunosEXSSH(device common.Device) bool {
 		}
 		vlanName := result[1]
 		vlanIDStr := result[2]
-		vlanID, err := strconv.Atoi(vlanIDStr)
-		if !checkDeviceFailure(device, "Failed to parse VLAN ID", err) {
+		vlanID, err := strconv.ParseUint(vlanIDStr, 10, 12)
+		if !checkDeviceWeakFailure(device, "Failed to parse VLAN ID", err) {
 			continue
 		}
 		if vlanID < 0 || vlanID >= 4096 {
-			showDeviceFailure(device, "VLAN ID out of range")
+			showDeviceWeakFailure(device, "VLAN ID out of range")
 			continue
 		}
-		vlans[vlanName] = vlanID
-		log.WithFields(log.Fields{
-			"device":    device.Address,
-			"vlan_name": vlanName,
-			"vlan_id":   vlanID,
-		}).Trace("Found VLAN")
+
+		vlans[vlanName] = uint(vlanID)
 	}
 
 	// Get MAC table
@@ -180,29 +183,32 @@ func JunosEXSSH(device common.Device) bool {
 		}
 		vlanName := result[1]
 		rawMACAddress := result[2]
-		learnType := result[3]
 		l2Interface := result[5]
-		// Ignore header, self-addresses, static addresses, etc.
-		if learnType != "Learn" && learnType != "Static" {
+		// Ignore "unknown MAC address" entries
+		if rawMACAddress == "*" {
 			continue
 		}
+		isSelf := l2Interface == "Router"
 		vlanID, ok := vlans[vlanName]
 		if !ok {
-			showDeviceFailure(device, "VLAN ID not found")
+			showDeviceWeakFailure(device, "VLAN ID not found")
 			continue
 		}
 		macAddress, err := net.ParseMAC(rawMACAddress)
-		if !checkDeviceFailure(device, "Malformed MAC address", err) {
+		if !checkDeviceWeakFailure(device, "Malformed MAC address", err) {
 			continue
 		}
-		log.WithFields(log.Fields{
-			"device":       device.Address,
-			"mac_addr":     macAddress,
-			"vlan_id":      vlanID,
-			"vlan_name":    vlanName,
-			"l2_interface": l2Interface,
-		}).Trace("Found MAC entry")
-		// TODO store it
+
+		l2DeviceEntry := common.L2DeviceEntry{
+			Time:        startTime,
+			Source:      device.Address,
+			MACAddress:  macAddress.String(),
+			VLANID:      vlanID,
+			VLANName:    vlanName,
+			L2Interface: l2Interface,
+			IsSelf:      isSelf,
+		}
+		db.StoreL2DeviceEntry(l2DeviceEntry)
 	}
 
 	// Get connected networks
@@ -210,6 +216,7 @@ func JunosEXSSH(device common.Device) bool {
 	stdinWriter.Write([]byte("help\n\n")) // Push output
 	var lastL3InterfaceID string
 	var lastL3InterfaceProto string
+	interfaceNetworks := make(map[string][]net.IPNet)
 	for {
 		currentOutput = <-lineChannel
 		if currentOutput.Status != outputReaderOK {
@@ -267,7 +274,7 @@ func JunosEXSSH(device common.Device) bool {
 
 		// Parse address to network
 		ipAddress, ipNetwork, err := net.ParseCIDR(rawIPNetwork)
-		if !checkDeviceFailure(device, "Malformed IP CIDR address", err) {
+		if !checkDeviceWeakFailure(device, "Malformed IP CIDR address", err) {
 			continue
 		}
 
@@ -276,12 +283,7 @@ func JunosEXSSH(device common.Device) bool {
 			continue
 		}
 
-		// TODO store
-		log.WithFields(log.Fields{
-			"device":       device.Address,
-			"l3_interface": l3Interface,
-			"ip_network":   ipNetwork,
-		}).Trace("Found L3 interface network")
+		interfaceNetworks[l3Interface] = append(interfaceNetworks[l3Interface], *ipNetwork)
 	}
 
 	// Get IPv4 ARP table
@@ -318,11 +320,11 @@ func JunosEXSSH(device common.Device) bool {
 		// Parse addresses
 		ipAddress := net.ParseIP(rawIPAddress)
 		if ipAddress == nil {
-			showDeviceFailure(device, "Malformed IP address")
+			showDeviceWeakFailure(device, "Malformed IP address")
 			continue
 		}
 		macAddress, err := net.ParseMAC(rawMACAddress)
-		if !checkDeviceFailure(device, "Malformed MAC address", err) {
+		if !checkDeviceWeakFailure(device, "Malformed MAC address", err) {
 			continue
 		}
 
@@ -331,13 +333,28 @@ func JunosEXSSH(device common.Device) bool {
 			continue
 		}
 
-		// TODO store
-		log.WithFields(log.Fields{
-			"device":       device.Address,
-			"l3_interface": l3Interface,
-			"ip_address":   ipAddress,
-			"mac_address":  macAddress,
-		}).Trace("Found ARP entry")
+		// Find connected IP network
+		var ipNetwork *net.IPNet = nil
+		for _, network := range interfaceNetworks[l3Interface] {
+			if network.Contains(ipAddress) {
+				ipNetwork = &network
+				break
+			}
+		}
+		if ipNetwork == nil {
+			showDeviceWeakFailure(device, "Connected network not found")
+			continue
+		}
+
+		l3DeviceEntry := common.L3DeviceEntry{
+			Time:        startTime,
+			Source:      device.Address,
+			IPAddress:   ipAddress.String(),
+			MACAddress:  macAddress.String(),
+			L3Interface: l3Interface,
+			IPNetwork:   ipNetwork.String(),
+		}
+		db.StoreL3DeviceEntry(l3DeviceEntry)
 	}
 
 	// Get IPv6 NDP table
@@ -372,28 +389,43 @@ func JunosEXSSH(device common.Device) bool {
 		l3Interface := result[7]
 
 		// Parse addresses
-		address := net.ParseIP(rawIPAddress)
-		if address == nil {
-			showDeviceFailure(device, "Malformed IP address")
+		ipAddress := net.ParseIP(rawIPAddress)
+		if ipAddress == nil {
+			showDeviceWeakFailure(device, "Malformed IP address")
 			continue
 		}
 		macAddress, err := net.ParseMAC(rawMACAddress)
-		if !checkDeviceFailure(device, "Malformed MAC address", err) {
+		if !checkDeviceWeakFailure(device, "Malformed MAC address", err) {
 			continue
 		}
 
 		// Skip link-local
-		if address.IsLinkLocalUnicast() {
+		if ipAddress.IsLinkLocalUnicast() {
 			continue
 		}
 
-		// TODO store
-		log.WithFields(log.Fields{
-			"device":       device.Address,
-			"address":      address,
-			"mac_address":  macAddress,
-			"l3_interface": l3Interface,
-		}).Trace("Found NDP entry")
+		// Find connected IP network
+		var ipNetwork *net.IPNet = nil
+		for _, network := range interfaceNetworks[l3Interface] {
+			if network.Contains(ipAddress) {
+				ipNetwork = &network
+				break
+			}
+		}
+		if ipNetwork == nil {
+			showDeviceWeakFailure(device, "Connected network not found")
+			continue
+		}
+
+		l3DeviceEntry := common.L3DeviceEntry{
+			Time:        startTime,
+			Source:      device.Address,
+			IPAddress:   ipAddress.String(),
+			MACAddress:  macAddress.String(),
+			L3Interface: l3Interface,
+			IPNetwork:   ipNetwork.String(),
+		}
+		db.StoreL3DeviceEntry(l3DeviceEntry)
 	}
 
 	// Exit

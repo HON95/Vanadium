@@ -16,8 +16,9 @@ RUN go mod download
 ARG APP_VERSION
 COPY cmd cmd
 COPY common common
-COPY core core
-COPY scrapers scrapers
+COPY db db
+COPY http http
+COPY scraping scraping
 COPY util util
 RUN go build -v \
 -ldflags="-X 'common.appVersion=${APP_VERSION}'" \

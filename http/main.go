@@ -1,4 +1,4 @@
-package core
+package http
 
 import (
 	"context"
@@ -12,14 +12,17 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"dev.hon.one/vanadium/common"
+	"dev.hon.one/vanadium/db"
 	"dev.hon.one/vanadium/util"
 )
 
-// StartHTTPServer - Start HTTP server in the background.
-func StartHTTPServer(waitGroup *sync.WaitGroup, shutdown *util.ShutdownChannelDistributor) {
-	waitGroup.Add(1)
+// StartServer - Start HTTP server in the background.
+func StartServer(waitGroup *sync.WaitGroup, shutdown *util.ShutdownChannelDistributor) {
 	shutdownChannel := make(chan bool, 1)
-	shutdown.AddListener(shutdownChannel)
+	if !shutdown.AddListener(shutdownChannel) {
+		return
+	}
+	waitGroup.Add(1)
 
 	// Configure
 	var mainServeMux http.ServeMux
@@ -34,7 +37,7 @@ func StartHTTPServer(waitGroup *sync.WaitGroup, shutdown *util.ShutdownChannelDi
 	var shutdownContextCancel context.CancelFunc = nil
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.WithError(err).Fatal("HTTP server failed")
+			log.WithError(err).Error("HTTP server failed")
 		}
 		// Cancel shutdown timer
 		if shutdownContextCancel != nil {
@@ -81,6 +84,7 @@ func handleMetricsRequest(response http.ResponseWriter, request *http.Request) {
 	util.NewExporterMetric(registry, common.PrometheusNamespace, common.AppVersion)
 
 	// TODO metrics
+	db.FetchRecentScrapeEntries()
 
 	// Delegare final handling to Prometheus
 	promhttp.HandlerFor(registry, promhttp.HandlerOpts{}).ServeHTTP(response, request)

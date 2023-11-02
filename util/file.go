@@ -17,11 +17,11 @@ func ParseJSONFile(destination interface{}, path string) bool {
 
 	dat, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.WithError(err).Fatal("Failed to read file")
+		log.WithError(err).Error("Failed to read file")
 		return false
 	}
 	if err := json.Unmarshal(dat, destination); err != nil {
-		log.WithError(err).Fatal("Failed to parse file")
+		log.WithError(err).Error("Failed to parse file")
 		return false
 	}
 

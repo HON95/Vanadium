@@ -1,11 +1,11 @@
-package core
+package scraping
 
 import (
 	"sync"
 	"time"
 
 	"dev.hon.one/vanadium/common"
-	"dev.hon.one/vanadium/scrapers"
+	"dev.hon.one/vanadium/db"
 	"dev.hon.one/vanadium/util"
 	log "github.com/sirupsen/logrus"
 )
@@ -14,7 +14,9 @@ import (
 func StartScraper(waitGroup *sync.WaitGroup, shutdown *util.ShutdownChannelDistributor) {
 	// Setup shutdown signal and waitgroup
 	shutdownChannel := make(chan bool, 1)
-	shutdown.AddListener(shutdownChannel)
+	if !shutdown.AddListener(shutdownChannel) {
+		return
+	}
 	waitGroup.Add(1)
 
 	go func() {
@@ -31,7 +33,6 @@ func StartScraper(waitGroup *sync.WaitGroup, shutdown *util.ShutdownChannelDistr
 			case <-shutdownChannel:
 				return
 			}
-
 		}
 	}()
 
@@ -55,23 +56,24 @@ func scrapeSingle(device common.Device) {
 	var success = false
 	switch connectionType := device.ConnectionType; connectionType {
 	case common.ConnectionTypeLinuxSSH:
-		log.Fatal("Not yet implemented")
+		log.Warn("Not yet implemented: ConnectionTypeLinuxSSH")
 	case common.ConnectionTypeVyOSSSH:
-		success = scrapers.VyOSSSH(device)
+		success = VyOSSSH(device, startTime)
 	case common.ConnectionTypeJunosEXSSH:
-		success = scrapers.JunosEXSSH(device)
+		success = JunosEXSSH(device, startTime)
 	case common.ConnectionTypeFSOSSSH:
-		log.Fatal("Not yet implemented")
+		log.Warn("Not yet implemented: ConnectionTypeFSOSSSH")
 	case common.ConnectionTypeTPLinkJetstreamSSH:
-		log.Fatal("Not yet implemented")
+		log.Warn("Not yet implemented: ConnectionTypeTPLinkJetstreamSSH")
 	}
 
 	// Record time and duration
 	duration := time.Since(startTime)
-	log.WithFields(log.Fields{
-		"scrape_start":    startTime,
-		"scrape_duration": duration,
-		"scrape_success":  success,
-	}).Trace("Scraping device done")
-	// TODO scrape result in database
+	scrapeEntry := common.ScrapeEntry{
+		Time:     startTime,
+		Source:   device.Address,
+		Duration: duration,
+		Success:  success,
+	}
+	db.StoreScrapeEntry(scrapeEntry)
 }

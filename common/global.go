@@ -5,6 +5,9 @@ package common
 // GlobalConfig - Global singleton.
 var GlobalConfig = Config{
 	HTTPEndpoint:          ":8080",
+	InfluxDBURL:           "http://influxdb:8086",
+	InfluxDBToken:         "0",
+	InfluxDBOrg:           "vanadium",
 	CredentialsPath:       "credentials.json",
 	DevicesPath:           "devices.json",
 	ScrapeIntervalSeconds: 60.0,

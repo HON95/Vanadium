@@ -11,6 +11,9 @@ const PrometheusNamespace = "vanadium"
 // Config - The config.
 type Config struct {
 	HTTPEndpoint          string  `json:"http_endpoint"`
+	InfluxDBURL           string  `json:"influxdb_url"`
+	InfluxDBToken         string  `json:"influxdb_token"`
+	InfluxDBOrg           string  `json:"influxdb_org"`
 	CredentialsPath       string  `json:"credentials_path"`
 	DevicesPath           string  `json:"devices_path"`
 	ScrapeIntervalSeconds float64 `json:"scrape_interval"`

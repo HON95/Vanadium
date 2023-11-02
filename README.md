@@ -59,13 +59,24 @@ services:
 
 ## TODO
 
-- Clean shutdown of web server, scraper and DB?
 - Distribute scrapes during scrape interval.
 - Scrape timeout.
-- Group L2/MAC by VLAN ID, group L3/IP by network.
 - VRFs/VPNs. Just show data for all VRFs now and ignore VRF names. If a VRF is not currently included in the data, it's considered a bug.
-- MAC age, ignore old.
-- Linux defaults to 30s from reachable to stale in neighbor table. Scraping interval should thus be <30s to capture everything.
+- MAC table: Junos stores for up to 5 minutes.
+- Neighbors: Linux defaults to 30s from reachable to stale in neighbor table. Scraping interval should thus be <30s to capture everything. Junos?
+- Per-device scraping interval?
+- Per-device scraping interval and goroutine, allows easy offset intervals. Remove "scrapeAll".
+- Tune so that number of devices actually matches real users.
+- Aggregation: Remove overlapping MAC/IP addresses. Remove scraped device addresse (we got both MAC and IP?).
+- Use NETCONF XML for Junos instead of CLI screen scraping.
+- Prom metrics:
+  - Device info. Always 1.
+  - Last scrape status per device, 1 for successful.
+  - Last scrape duration per device.
+  - Number of devices. Per type.
+  - Note: How to separate user devices from non-user devices. Can't use source devices only, not all devices are scraped. Provice ignore list of IP and MAC addresses?
+  - MAC addresses per VLAN ID. Remove duplicates. Include sources?
+  - IP addresses per subnet. Remove duplicates.
 
 ## License
 

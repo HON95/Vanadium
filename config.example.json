@@ -1,5 +1,8 @@
 {
     "http_endpoint": ":8080",
+    "influxdb_url": "http://influxdb:8086",
+    "influxdb_token": "0",
+    "influxdb_org": "vanadium",
     "credentials_path": "credentials.json",
     "devices_path": "devices.json",
     "scrape_interval": 60
